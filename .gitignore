@@ -1,0 +1,6 @@
+# Gizlenecek dosyalar
+.env
+database.py
+node_modules/
+build/
+.DS_Store

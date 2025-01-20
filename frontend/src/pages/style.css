@@ -1,0 +1,5 @@
+.category-select {
+    min-width: 200px; /* Minimum genişlik */
+    max-width: 300px; /* Maksimum genişlik */
+    width: 100%; /* Ebeveyn alanına uyacak şekilde genişlet */
+}
