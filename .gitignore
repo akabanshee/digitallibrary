@@ -1,6 +1,7 @@
 # Gizlenecek dosyalar
 .env
 database.py
+azure_ai.py
 node_modules/
 build/
 .DS_Store

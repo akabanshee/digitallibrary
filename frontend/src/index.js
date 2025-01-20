@@ -7,4 +7,9 @@ if (!rootElement) {
   console.error("Root element bulunamadı. index.html dosyanızı kontrol edin.");
 }
 
-const root = ReactDOM.createRoot(rootElement)
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
