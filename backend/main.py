@@ -19,6 +19,8 @@ from fastapi import Query
 import utils as utils
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
+from chat_agent import chat_with_user
+from sql_agent import generate_sql_query
 
 
 
@@ -295,3 +297,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.post("/chat")
+def chat(user_input: str):
+    response = chat_with_user(user_input)
+    return {"response": response}
+
+@app.post("/generate-sql")
+def generate_sql(user_input: str):
+    response = generate_sql_query(user_input)
+    return {"response": response}
+
+@app.post("/chat-to-sql")
+def chat_to_sql(user_input: str):
+    # Kullanıcıdan gelen mesajı önce chat botuna gönderiyoruz
+    chat_response = chat_with_user(user_input)
+    
+    # Chat botundan gelen mesajı SQL agent'ına gönderiyoruz
+    sql_response = generate_sql_query(chat_response)
+    
+    return {
+        "chat_response": chat_response,
+        "sql_response": sql_response
+    }
