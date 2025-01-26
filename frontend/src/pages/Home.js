@@ -11,7 +11,11 @@ const Home = () => {
     };
 
     const handleExploreAuthors = () => {
-        navigate("/authors"); // Yazarlar sayfasına yönlendirme
+        navigate("/authors");
+    };
+
+    const handleChatWithLibrarian = () => {
+        navigate("/chat-with-librarian");
     };
 
     return (
@@ -43,12 +47,23 @@ const Home = () => {
                         variant="contained"
                         color="secondary"
                         size="large"
-                        onClick={handleExploreAuthors} // Bu fonksiyonu doğru şekilde ekliyoruz
+                        onClick={handleExploreAuthors}
                     >
                         Manage Authors
                     </Button>
                 </Grid>
             </Grid>
+            {/* Chat with Librarian Button */}
+            <div style={{ marginTop: "2rem" }}>
+                <Button
+                    variant="contained"
+                    color="success"
+                    size="large"
+                    onClick={handleChatWithLibrarian}
+                >
+                    Chat with Librarian
+                </Button>
+            </div>
         </Container>
     );
 };
