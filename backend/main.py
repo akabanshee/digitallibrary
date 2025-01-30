@@ -21,6 +21,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from chat_agent import chat_with_user
 from sql_agent import generate_sql_query
+from pydantic import BaseModel
+from chat_agent import chat_with_user
+from sql_agent import generate_sql_query, execute_sql_query
+
 
 
 
@@ -297,25 +301,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class UserRequest(BaseModel):
+    user_input: str
+
 @app.post("/chat")
-def chat(user_input: str):
+def chat_endpoint(request: UserRequest):
+    """
+    Kullanıcıyla sohbet eden endpoint.
+    """
+    try:
+        response = chat_with_user(request.user_input)
+        return {"response": response}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/generate-sql")
+def sql_endpoint(request: UserRequest):
+    """
+    Kullanıcının SQL sorgusu oluşturmasını sağlayan endpoint.
+    """
+    try:
+        sql_query = generate_sql_query(request.user_input)
+        return {"response": sql_query}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/chat-to-sql")
+def chat_to_sql_endpoint(request: UserRequest):
+    """
+    Kullanıcı girdisini alır, SQL sorgusu oluşturur ve sonuçları döndürür.
+    """
+    user_input = request.user_input
     response = chat_with_user(user_input)
     return {"response": response}
 
-@app.post("/generate-sql")
-def generate_sql(user_input: str):
-    response = generate_sql_query(user_input)
-    return {"response": response}
+@app.post("/process")
+def process_request(request: UserRequest):
+    """
+    Girdiyi analiz ederek uygun işlemi yapan endpoint.
+    """
+    try:
+        user_input = request.user_input
 
-@app.post("/chat-to-sql")
-def chat_to_sql(user_input: str):
-    # Kullanıcıdan gelen mesajı önce chat botuna gönderiyoruz
-    chat_response = chat_with_user(user_input)
-    
-    # Chat botundan gelen mesajı SQL agent'ına gönderiyoruz
-    sql_response = generate_sql_query(chat_response)
-    
-    return {
-        "chat_response": chat_response,
-        "sql_response": sql_response
-    }
+        # Kullanıcının girdisini analiz et (SQL mi, Chat mi?)
+        if "SELECT" in user_input.upper() or "FROM" in user_input.upper():
+            # Eğer SQL sorgusu gibi görünüyorsa, doğrudan veritabanına gönder
+            sql_result = execute_sql_query(user_input)
+            return {"classification": "sql", "response": sql_result}
+        else:
+            # Chat olarak değerlendirilirse AI ile cevap oluştur
+            chat_response = chat_with_user(user_input)
+            return {"classification": "chat", "response": chat_response}
+    except Exception as e:
+        return {"error": str(e)}
