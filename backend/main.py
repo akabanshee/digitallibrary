@@ -337,20 +337,10 @@ def chat_to_sql_endpoint(request: UserRequest):
 
 @app.post("/process")
 def process_request(request: UserRequest):
-    """
-    Girdiyi analiz ederek uygun işlemi yapan endpoint.
-    """
-    try:
-        user_input = request.user_input
-
-        # Kullanıcının girdisini analiz et (SQL mi, Chat mi?)
-        if "SELECT" in user_input.upper() or "FROM" in user_input.upper():
-            # Eğer SQL sorgusu gibi görünüyorsa, doğrudan veritabanına gönder
-            sql_result = execute_sql_query(user_input)
-            return {"classification": "sql", "response": sql_result}
-        else:
-            # Chat olarak değerlendirilirse AI ile cevap oluştur
-            chat_response = chat_with_user(user_input)
-            return {"classification": "chat", "response": chat_response}
-    except Exception as e:
-        return {"error": str(e)}
+    user_input = request.user_input
+    sql_query = generate_sql_query(user_input)
+    results = execute_sql_query(sql_query)
+    return {
+        "response": results,
+        "sql_query": sql_query  # Oluşturulan SQL sorgusunu frontend'e döndür
+    }
