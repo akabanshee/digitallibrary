@@ -29,24 +29,27 @@ const ChatWithLibrarian = () => {
   const handleSendMessage = async () => {
     if (!userInput.trim()) return;
     setLoading(true);
+
     try {
+      // API'ye POST isteği gönder
       const response = await axios.post("http://127.0.0.1:8000/process", {
         user_input: userInput,
       });
+
       const data = response.data;
       console.log("📡 API Response:", data);
-  
+
+      // Gelen yanıtın bir tablo mu yoksa metin mi olduğunu kontrol et
       if (Array.isArray(data.response)) {
-        setTableData(data.response);
-        setChatResponse("");
+        setTableData(data.response); // Tablo verisi için
+        setChatResponse(""); // Tablo varsa metin yanıtı temizle
       } else {
-        setChatResponse(data.response);
-        setTableData([]);
+        setChatResponse(data.response); // Metin yanıtı için
+        setTableData([]); // Metin varsa tabloyu temizle
       }
     } catch (error) {
       console.error("🚨 API Error:", error);
-      setChatResponse("An error occurred while contacting the server.");
-      setTableData([]);
+      setChatResponse("An error occurred while processing your request.");
     } finally {
       setLoading(false);
     }

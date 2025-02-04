@@ -370,3 +370,4 @@ def web_search_endpoint(request: UserRequest):
         return {"response": search_results}
     except Exception as e:
         return {"error": str(e)}
+    

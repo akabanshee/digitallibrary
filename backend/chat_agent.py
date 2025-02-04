@@ -57,4 +57,3 @@ def chat_with_user(user_input):
     except Exception as e:
         print(f"Error in chat_with_user: {e}")
         return f"Error: {str(e)}"
-

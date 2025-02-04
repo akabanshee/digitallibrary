@@ -1,6 +1,6 @@
 import requests
 
-def search_web(query):
+def search_web(query): #daha guncel bu ama digeri yeterli bence
     """
     DuckDuckGo Instant Answer API ile web araması yapar.
     """
