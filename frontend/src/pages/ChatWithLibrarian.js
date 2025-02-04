@@ -14,6 +14,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Divider,
 } from "@mui/material";
 import { ArrowBack } from "@mui/icons-material";
 import { Link } from "react-router-dom";
@@ -34,7 +35,7 @@ const ChatWithLibrarian = () => {
       });
       const data = response.data;
       console.log("📡 API Response:", data);
-
+  
       if (Array.isArray(data.response)) {
         setTableData(data.response);
         setChatResponse("");
@@ -64,7 +65,7 @@ const ChatWithLibrarian = () => {
       <Box
         sx={{
           py: 2,
-          px: 2,
+          px: 3,
           display: "flex",
           alignItems: "center",
           backgroundColor: "white",
@@ -83,12 +84,9 @@ const ChatWithLibrarian = () => {
         >
           <ArrowBack />
         </IconButton>
-        {/* Başlık Ortalanıyor */}
-        <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
-          <Typography variant="h5" fontWeight="bold">
-            Welcome to AI-Powered Database Chat
-          </Typography>
-        </Box>
+        <Typography variant="h5" fontWeight="bold" sx={{ flex: 1, textAlign: "center" }}>
+          AI-Powered Database Chat
+        </Typography>
       </Box>
 
       {/* Ana İçerik */}
@@ -102,15 +100,25 @@ const ChatWithLibrarian = () => {
           gap: 3,
         }}
       >
-        {/* Soru Sorma Alanı */}
-        <Paper elevation={1} sx={{ p: 3, backgroundColor: "#ffffff", textAlign: "center" }}>
-          <Typography variant="body1" color="textSecondary" gutterBottom>
-            Ask something about the database, and the AI will generate a query and get results for you!
+        {/* Kullanım Kılavuzu */}
+        <Paper elevation={3} sx={{ p: 3, textAlign: "center", bgcolor: "#f9f9f9" }}>
+          <Typography variant="subtitle1" color="textSecondary">
+            <strong>How to use:</strong>
           </Typography>
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="body2" color="textSecondary">
+            - <strong>General knowledge:</strong> Ask questions like "Who is Atatürk?" and receive detailed answers.
+          </Typography>
+          <Typography variant="body2" color="textSecondary">
+            - <strong>Database queries:</strong> Ask questions like "List all books written by Turkish authors." The AI will query the database.
+          </Typography>
+        </Paper>
 
-          <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+        {/* Soru Sorma Alanı */}
+        <Paper elevation={3} sx={{ p: 3 }}>
+          <Box sx={{ display: "flex", gap: 2 }}>
             <TextField
-              label="Ask about the database..."
+              label="Ask your question here..."
               variant="outlined"
               fullWidth
               value={userInput}
@@ -128,9 +136,9 @@ const ChatWithLibrarian = () => {
           </Box>
         </Paper>
 
-        {/* Metinsel Yanıt */}
+        {/* Yanıt Gösterimi */}
         {chatResponse && (
-          <Paper elevation={1} sx={{ p: 3, backgroundColor: "#ffffff" }}>
+          <Paper elevation={3} sx={{ p: 3, mt: 2, bgcolor: "#ffffff" }}>
             <Typography variant="h6" color="primary" gutterBottom>
               AI Response:
             </Typography>
@@ -138,7 +146,7 @@ const ChatWithLibrarian = () => {
               variant="body1"
               sx={{
                 whiteSpace: "pre-wrap",
-                fontFamily: "monospace",
+                fontFamily: "Roboto",
               }}
             >
               {chatResponse}
@@ -148,13 +156,16 @@ const ChatWithLibrarian = () => {
 
         {/* Tablo Yanıtı */}
         {tableData.length > 0 && (
-          <TableContainer component={Paper} elevation={1} sx={{ p: 2, overflowX: "auto" }}>
+          <TableContainer component={Paper} elevation={3} sx={{ p: 2, mt: 2, bgcolor: "#ffffff" }}>
+            <Typography variant="h6" color="primary" gutterBottom>
+              Query Results:
+            </Typography>
             <Table>
               <TableHead>
                 <TableRow>
                   {Object.keys(tableData[0]).map((key) => (
-                    <TableCell key={key}>
-                      <strong>{key}</strong>
+                    <TableCell key={key} sx={{ fontWeight: "bold" }}>
+                      {key}
                     </TableCell>
                   ))}
                 </TableRow>

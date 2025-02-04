@@ -2,6 +2,7 @@ import os
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 from sql_agent import generate_sql_query, execute_sql_query
+from web_search import search_web  # ✅ Web arama modülünü ekledik
 
 # Çevre değişkenlerini yükleme
 load_dotenv()
@@ -18,7 +19,7 @@ def chat_with_user(user_input):
     Kullanıcıdan gelen girdiyi analiz eder ve gerekirse SQL Agent'a yönlendirir.
     """
     try:
-        # AI'ya sorunun SQL gerektirip gerektirmediğini soralım
+        # Sorunun SQL gerektirip gerektirmediğini belirle
         classification_response = client.chat.completions.create(
             model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
             messages=[
@@ -27,28 +28,33 @@ def chat_with_user(user_input):
             ],
             max_tokens=10
         )
-        
+
         classification = classification_response.choices[0].message.content.strip()
         print(f"Classification: {classification}")  # Loglama
 
-        # Eğer SQL sorgusu gerektiriyorsa, SQL Agent'a yönlendir
+        # Eğer SQL sorgusu gerektiriyorsa
         if classification == "SQL":
             sql_query = generate_sql_query(user_input)  # SQL sorgusu oluştur
             print(f"Generated SQL Query: {sql_query}")  # SQL sorgusunu logla
             sql_result = execute_sql_query(sql_query)  # Sorguyu çalıştır
             return sql_result if sql_result else "No matching data found in the database."
-        
-        # Eğer sadece chat yanıtı gerekliyse, normal cevap ver
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": user_input}
-            ],
-            max_tokens=100
-        )
-        return response.choices[0].message.content.strip()
+
+        # Eğer sadece chat yanıtı gerekliyse
+        elif classification == "Chat":
+            response = client.chat.completions.create(
+                model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": user_input}
+                ],
+                max_tokens=300
+            )
+            return response.choices[0].message.content.strip()
+
+        else:
+            return "I'm not sure how to classify this query."
 
     except Exception as e:
         print(f"Error in chat_with_user: {e}")
         return f"Error: {str(e)}"
+

@@ -24,7 +24,7 @@ from sql_agent import generate_sql_query
 from pydantic import BaseModel
 from chat_agent import chat_with_user
 from sql_agent import generate_sql_query, execute_sql_query
-
+from web_search import search_web 
 
 
 
@@ -337,10 +337,36 @@ def chat_to_sql_endpoint(request: UserRequest):
 
 @app.post("/process")
 def process_request(request: UserRequest):
+    """
+    Kullanıcının girdisini alır, sınıflandırır ve yanıt döndürür.
+    """
     user_input = request.user_input
-    sql_query = generate_sql_query(user_input)
-    results = execute_sql_query(sql_query)
-    return {
-        "response": results,
-        "sql_query": sql_query  # Oluşturulan SQL sorgusunu frontend'e döndür
-    }
+
+    try:
+        # Kullanıcı girdisini analiz et
+        response = chat_with_user(user_input)
+
+        # Eğer yanıt bir liste ise (SQL sorgusunun sonucu)
+        if isinstance(response, list):
+            return {
+                "response": response,  # SQL sonuçları döndürülür
+                "sql_query": generate_sql_query(user_input)
+            }
+
+        # Eğer yanıt metin tabanlı ise (Genel yanıt)
+        return {"response": response}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/search-web")
+def web_search_endpoint(request: UserRequest):
+    """
+    Kullanıcının genel bilgi almak için web araması yapmasını sağlar.
+    """
+    try:
+        search_results = search_web(request.user_input)
+        return {"response": search_results}
+    except Exception as e:
+        return {"error": str(e)}
