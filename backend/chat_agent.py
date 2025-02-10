@@ -2,7 +2,7 @@ import os
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 from sql_agent import generate_sql_query, execute_sql_query
-from web_search import search_web  # ✅ Web arama modülünü ekledik
+from web_search import search_web  
 
 # Çevre değişkenlerini yükleme
 load_dotenv()
