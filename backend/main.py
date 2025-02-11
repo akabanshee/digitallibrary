@@ -340,24 +340,44 @@ def process_request(request: UserRequest):
     """
     Kullanıcının girdisini alır, sınıflandırır ve yanıt döndürür.
     """
-    user_input = request.user_input
+    user_input = request.user_input.strip()
 
     try:
         # Kullanıcı girdisini analiz et
         response = chat_with_user(user_input)
+        sql_query = generate_sql_query(user_input)
+
+        # API Yanıtlarını Logla (Debug İçin)
+        print("📥 Received User Input:", user_input)
+        print("📝 Generated SQL Query:", sql_query)
+        print("💬 Chatbot Response:", response)
 
         # Eğer yanıt bir liste ise (SQL sorgusunun sonucu)
-        if isinstance(response, list):
+        if isinstance(response, dict) and response.get("type") == "SQL":
             return {
-                "response": response,  # SQL sonuçları döndürülür
-                "sql_query": generate_sql_query(user_input)
+                "status": "success",
+                "type": "SQL",
+                "data": response["data"],  # SQL sonuçları direkt döndür
+                "sql_query": sql_query
             }
 
-        # Eğer yanıt metin tabanlı ise (Genel yanıt)
-        return {"response": response}
+        # Eğer yanıt metin tabanlı ise (Chatbot yanıtı)
+        if isinstance(response, dict) and response.get("type") == "Chat":
+            return {
+                "status": "success",
+                "type": "Chat",
+                "data": str(response["data"])  # **String formatına çevir**
+            }
+
+        # Eğer yanlış formatta bir yanıt dönerse
+        return {
+            "status": "error",
+            "message": "Unexpected response format."
+        }
 
     except Exception as e:
-        return {"error": str(e)}
+        print("🚨 Error:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/search-web")

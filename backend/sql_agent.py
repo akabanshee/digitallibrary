@@ -1,8 +1,9 @@
 import os
-import pyodbc  # Azure SQL bağlantısı için
+import json
+import pyodbc
+import re
 from openai import AzureOpenAI
 from dotenv import load_dotenv
-import re
 
 # .env içeriğini yükle
 load_dotenv()
@@ -13,9 +14,6 @@ client = AzureOpenAI(
     api_version="2024-07-01-preview",
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
 )
-
-# Eğer bir yerde kullanmıyorsanız tamamen silebilirsiniz
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Yanlış sütun adlarını düzeltmek için bir eşleme sözlüğü
 COLUMN_NAME_FIXES = {
@@ -29,86 +27,59 @@ COLUMN_NAME_FIXES = {
 
 def correct_column_names(sql_query):
     """
-    SQL sorgusunda yalnızca yanlış sütun adlarını doğru olanlarla değiştirir.
+    Corrects incorrect column names in SQL queries.
     """
-    sql_query = sql_query.replace("`", "")  # Gereksiz karakterleri kaldır
+    COLUMN_NAME_FIXES = {
+        "price": "pricing",
+        "author_id": "author",
+        "first name": "first_name",
+        "last name": "last_name",
+        "date of birth": "date_of_birth",
+        "nationality": "nationality",
+        "genre": "category",
+        "author": "authors"  # ✅ Books yerine 'authors' tablosunu kullan
+    }
 
-    # Yanlış sütun adlarını düzelt
-    for wrong_name, correct_name in COLUMN_NAME_FIXES.items():
-        # Sadece sütun adlarını düzeltmek için tablo adlarını değiştirmemeyi sağla
-        pattern = rf"\b{wrong_name}\b"
-        sql_query = re.sub(pattern, correct_name, sql_query)
-    
+    # Eğer SQL sorgusunda nationality eksikse düzelt
+    if "WHERE author LIKE '%Turkish%'" in sql_query:
+        sql_query = sql_query.replace("WHERE author LIKE '%Turkish%'", "WHERE nationality = 'Turkish'")
+
+    print(f"🔄 Corrected SQL Query: {sql_query}")  
     return sql_query
+
 
 def get_pyodbc_connection_string():
-    """
-    .env dosyasında tanımlı ortam değişkenlerinden pyodbc için bağlantı dizesi oluşturur.
-    """
-    server = os.getenv("DATABASE_SERVER")
-    database = os.getenv("DATABASE_NAME")
-    user = os.getenv("DATABASE_USER")
-    password = os.getenv("DATABASE_PASSWORD")
-    encrypt = os.getenv("DATABASE_ENCRYPT", "no")
-    trust_cert = os.getenv("DATABASE_TRUST_SERVER_CERTIFICATE", "yes")
-    timeout = os.getenv("DATABASE_TIMEOUT", "60")
-
     return (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
-        f"Server=tcp:{server},1433;"
-        f"Database={database};"
-        f"Uid={user};"
-        f"Pwd={password};"
-        f"Encrypt={encrypt};"
-        f"TrustServerCertificate={trust_cert};"
-        f"Connection Timeout={timeout};"
+        f"Server=tcp:{os.getenv('DATABASE_SERVER')},1433;"
+        f"Database={os.getenv('DATABASE_NAME')};"
+        f"Uid={os.getenv('DATABASE_USER')};"
+        f"Pwd={os.getenv('DATABASE_PASSWORD')};"
+        f"Encrypt={os.getenv('DATABASE_ENCRYPT', 'no')};"
+        f"TrustServerCertificate={os.getenv('DATABASE_TRUST_SERVER_CERTIFICATE', 'yes')};"
+        f"Connection Timeout={os.getenv('DATABASE_TIMEOUT', '60')};"
     )
 
-def test_database_connection():
-    """
-    Veritabanı bağlantısını test eder ve sonucu döner.
-    """
-    try:
-        conn_string = get_pyodbc_connection_string()
-        print(f"Testing connection with: {conn_string}")
-        conn = pyodbc.connect(conn_string)
-        print("Connection successful!")
-        conn.close()
-    except pyodbc.OperationalError as e:
-        print(f"OperationalError: {e}")
-    except pyodbc.Error as e:
-        print(f"SQL Error: {e}")
-    except Exception as e:
-        print(f"Unexpected Error: {e}")
-
 def clean_sql_query(sql_query):
-    """
-    OpenAI tarafından oluşturulan SQL sorgularındaki gereksiz işaretlemeleri temizler.
-    """
     sql_query = sql_query.strip()
-
-    # Eğer OpenAI'nin döndürdüğü SQL bloğu içinde ```sql veya ``` varsa temizle
-    sql_query = re.sub(r"^```sql\s*", "", sql_query)  # "```sql" ile başlayan satırları temizle
-    sql_query = re.sub(r"^```\s*", "", sql_query)     # "```" ile başlayan satırları temizle
-    sql_query = sql_query.strip()
-    
-    return sql_query
+    sql_query = re.sub(r"^```sql\s*", "", sql_query)
+    sql_query = re.sub(r"^```\s*", "", sql_query)
+    return sql_query.strip()
 
 def generate_sql_query(user_input):
     """
-    Kullanıcının girdisine göre SQL sorgusu oluşturur ve loglar.
+    Generates an SQL query based on the user's input.
     """
     try:
         system_message = (
-            "You are an AI assistant that generates SQL queries from natural language questions. "
-            "The database contains two tables: 'books' and 'authors'. "
-            "The 'books' table has the following columns: id (int), title (varchar), author_id (int), "
-            "year (int), category (varchar), file_path (varchar), pricing (float). "
-            "The 'authors' table has the following columns: id (int), first_name (varchar), last_name (varchar), "
-            "date_of_birth (varchar), nationality (varchar). "
-            "For example, if the question asks about a book's price, use 'pricing' as the column name. "
-            "If the question is about authors, use the 'authors' table and its respective column names. "
-            "Ensure the generated query is syntactically correct for SQL Server."
+            "You are an AI that generates SQL queries in JSON format from natural language questions. "
+            "Ensure that the response is a pure JSON object without markdown formatting. "
+            "The database has two tables: 'books' and 'authors'. "
+            "If the question asks about the number of books, use COUNT(*) from 'books'. "
+            "If the question asks about the number of authors, use COUNT(*) from 'authors'. "
+            "If filtering by nationality (e.g., 'Turkish authors'), use 'authors' table and WHERE nationality='Turkish'. "
+            "If filtering by category (e.g., 'Drama books'), use 'books' table and WHERE category='Drama'. "
+            "Output format: {\"query\": \"SQL_QUERY_HERE\"}"
         )
 
         response = client.chat.completions.create(
@@ -117,48 +88,68 @@ def generate_sql_query(user_input):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_input}
             ],
-            max_tokens=150,
+            max_tokens=150
         )
-        
+
         raw_sql_query = response.choices[0].message.content.strip()
-        print(f"Generated SQL Query (Raw): {raw_sql_query}")  # OpenAI'den gelen ham sorguyu göster
+        print(f"Generated Raw SQL: {raw_sql_query}")
 
-        # Temizlenmiş SQL sorgusunu al
-        cleaned_query = clean_sql_query(raw_sql_query)
-        print(f"Cleaned SQL Query: {cleaned_query}")  # Temizlenmiş SQL sorgusunu göster
+        cleaned_sql_query = re.sub(r"^```json\s*|\s*```$", "", raw_sql_query).strip()
+        
+        try:
+            structured_query = json.loads(cleaned_sql_query)
+            cleaned_query = clean_sql_query(structured_query.get("query", ""))
+        except json.JSONDecodeError:
+            print("❌ OpenAI response is not in JSON format!")
+            return {"status": "error", "message": "Invalid JSON format from OpenAI response"}
 
-        # Yanlış sütun adlarını düzelterek döndür
+        if not cleaned_query:
+            return {"status": "error", "message": "Generated SQL query is empty"}
+
         corrected_query = correct_column_names(cleaned_query)
-        print(f"Final SQL Query: {corrected_query}")  # Düzeltmeden sonra logla
+        print(f"Final SQL Query: {corrected_query}")
 
         return corrected_query
+
     except Exception as e:
         print(f"Error generating SQL query: {e}")
-        return f"OpenAI API Error: {str(e)}"
+        return {"status": "error", "message": str(e)}
+
+
+
 
 def execute_sql_query(sql_query):
     """
-    SQL sorgusunu çalıştırır ve sonuçları döner.
+    SQL sorgusunu çalıştırır ve sonuçları JSON formatında döner.
     """
     try:
-        print(f"Executing SQL Query: {sql_query}")  # Sorguyu çalıştırmadan önce logla
+        if not isinstance(sql_query, str) or sql_query.strip() == "":
+            print("❌ SQL Query string değil veya boş!")
+            return {"status": "error", "message": "Invalid SQL query"}
 
+        print(f"Executing SQL Query: {sql_query}")  # Log SQL Query
         conn_string = get_pyodbc_connection_string()
         conn = pyodbc.connect(conn_string, timeout=60)
-
         cursor = conn.cursor()
-        cursor.execute(sql_query)  # Sorguyu çalıştır
+        cursor.execute(sql_query)
+
         columns = [column[0] for column in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
-        print(f"Query Results: {results}")  # Sorgu sonuçlarını logla
+
+        print(f"SQL Results: {results}")  # Log the results
+
+        if not results:
+            return {"status": "error", "message": "No matching data found."}
         return results
+
     except pyodbc.OperationalError as e:
         print(f"SQL Timeout Error: {e}")
-        return "SQL Timeout Error: Server is unreachable or connection took too long."
+        return {"status": "error", "message": "SQL Timeout Error: Server is unreachable or connection took too long."}
     except pyodbc.Error as e:
         print(f"SQL Execution Error: {e}")
-        return f"SQL Execution Error: {e}"
+        return {"status": "error", "message": f"SQL Execution Error: {e}"}
     except Exception as e:
         print(f"Unexpected Error in execute_sql_query: {e}")
-        return f"Unexpected Error: {e}"
+        return {"status": "error", "message": f"Unexpected Error: {e}"}
+

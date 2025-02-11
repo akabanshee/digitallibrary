@@ -1,4 +1,5 @@
 import os
+import json
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 from sql_agent import generate_sql_query, execute_sql_query
@@ -16,44 +17,63 @@ client = AzureOpenAI(
 
 def chat_with_user(user_input):
     """
-    Kullanıcıdan gelen girdiyi analiz eder ve gerekirse SQL Agent'a yönlendirir.
+    Processes user input and routes it accordingly.
     """
     try:
-        # Sorunun SQL gerektirip gerektirmediğini belirle
         classification_response = client.chat.completions.create(
             model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
             messages=[
-                {"role": "system", "content": "You are an AI assistant. Your task is to classify whether the user's query requires an SQL database lookup or not. Answer only with 'SQL' or 'Chat'."},
+                {"role": "system", "content": "You are an AI assistant. Classify the user's query as either 'SQL' or 'Chat'. "
+                 "If the question requires retrieving data (like counting books, listing books, etc.), classify it as 'SQL'. "
+                 "Otherwise, classify it as 'Chat'. Only reply with 'SQL' or 'Chat'."},
                 {"role": "user", "content": user_input}
             ],
             max_tokens=10
         )
 
         classification = classification_response.choices[0].message.content.strip()
-        print(f"Classification: {classification}")  # Loglama
+        print(f"Classification: {classification}")
 
-        # Eğer SQL sorgusu gerektiriyorsa
         if classification == "SQL":
-            sql_query = generate_sql_query(user_input)  # SQL sorgusu oluştur
-            print(f"Generated SQL Query: {sql_query}")  # SQL sorgusunu logla
-            sql_result = execute_sql_query(sql_query)  # Sorguyu çalıştır
-            return sql_result if sql_result else "No matching data found in the database."
+            sql_query = generate_sql_query(user_input)
+            print(f"Generated SQL Query: {sql_query}")
 
-        # Eğer sadece chat yanıtı gerekliyse
+            sql_result = execute_sql_query(sql_query)
+            print(f"SQL Execution Result: {sql_result}")
+
+            return {
+                "status": "success",
+                "type": "SQL",
+                "data": sql_result
+            }
+
         elif classification == "Chat":
             response = client.chat.completions.create(
                 model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "system", "content": "You are a helpful assistant. Always reply in English."},
                     {"role": "user", "content": user_input}
                 ],
                 max_tokens=300
             )
-            return response.choices[0].message.content.strip()
+            structured_response = response.choices[0].message.content.strip()
+            print(f"Chat Response: {structured_response}")
+
+            return {
+                "status": "success",
+                "type": "Chat",
+                "data": structured_response
+            }
 
         else:
-            return "I'm not sure how to classify this query."
+            return {
+                "status": "error",
+                "message": "Query classification failed."
+            }
 
     except Exception as e:
         print(f"Error in chat_with_user: {e}")
-        return f"Error: {str(e)}"
+        return {
+            "status": "error",
+            "message": str(e)
+        }
