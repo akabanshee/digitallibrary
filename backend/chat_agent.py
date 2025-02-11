@@ -2,7 +2,7 @@ import os
 import json
 from openai import AzureOpenAI
 from dotenv import load_dotenv
-from sql_agent import generate_sql_query, execute_sql_query
+from sql_agent import generate_sql_query, execute_sql_query, correct_column_names  # ✅ Buraya ekledik!
 from web_search import search_web  
 
 # Çevre değişkenlerini yükleme
@@ -17,63 +17,68 @@ client = AzureOpenAI(
 
 def chat_with_user(user_input):
     """
-    Processes user input and routes it accordingly.
+    Uses OpenAI's function calling feature to determine if an SQL query is needed.
     """
     try:
-        classification_response = client.chat.completions.create(
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that determines whether a user's query needs an SQL database lookup. "
+                "If the query requires an SQL operation (like counting books, listing books, or filtering books), "
+                "call the 'execute_sql_query' function with the necessary SQL statement. "
+                "IMPORTANT: The 'books' table DOES NOT have a column named 'genre'. "
+                "Always use 'category' for filtering books by genre."
+            )
+        }
+
+        function_definitions = [
+            {
+                "name": "execute_sql_query",
+                "description": "Executes an SQL query on the books database and returns the result.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sql_query": {
+                            "type": "string",
+                            "description": "The SQL query to execute, such as 'SELECT COUNT(*) FROM books'."
+                        }
+                    },
+                    "required": ["sql_query"]
+                }
+            }
+        ]
+
+        response = client.chat.completions.create(
             model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
             messages=[
-                {"role": "system", "content": "You are an AI assistant. Classify the user's query as either 'SQL' or 'Chat'. "
-                 "If the question requires retrieving data (like counting books, listing books, etc.), classify it as 'SQL'. "
-                 "Otherwise, classify it as 'Chat'. Only reply with 'SQL' or 'Chat'."},
+                system_message,
                 {"role": "user", "content": user_input}
             ],
-            max_tokens=10
+            functions=function_definitions,
+            function_call="auto",
+            max_tokens=300
         )
 
-        classification = classification_response.choices[0].message.content.strip()
-        print(f"Classification: {classification}")
+        response_message = response.choices[0].message
+        function_call = response_message.function_call  
 
-        if classification == "SQL":
-            sql_query = generate_sql_query(user_input)
-            print(f"Generated SQL Query: {sql_query}")
+        if function_call and function_call.name == "execute_sql_query":
+            sql_query = json.loads(function_call.arguments)["sql_query"]
 
-            sql_result = execute_sql_query(sql_query)
-            print(f"SQL Execution Result: {sql_result}")
+            if not sql_query:  # Eğer SQL boşsa, hata döndür
+                return {"status": "error", "message": "Generated SQL query is empty"}
 
-            return {
-                "status": "success",
-                "type": "SQL",
-                "data": sql_result
-            }
+            corrected_sql = correct_column_names(sql_query)
 
-        elif classification == "Chat":
-            response = client.chat.completions.create(
-                model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant. Always reply in English."},
-                    {"role": "user", "content": user_input}
-                ],
-                max_tokens=300
-            )
-            structured_response = response.choices[0].message.content.strip()
-            print(f"Chat Response: {structured_response}")
+            if not corrected_sql:  # Eğer düzeltilmiş SQL boşsa, hata döndür
+                return {"status": "error", "message": "Final SQL query is empty after correction"}
 
-            return {
-                "status": "success",
-                "type": "Chat",
-                "data": structured_response
-            }
+            sql_result = execute_sql_query(corrected_sql)
+            return {"status": "success", "type": "SQL", "data": sql_result}
 
         else:
-            return {
-                "status": "error",
-                "message": "Query classification failed."
-            }
+            return {"status": "success", "type": "Chat", "data": response_message.content}
 
     except Exception as e:
-        print(f"Error in chat_with_user: {e}")
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        print(f"❌ Error in chat_with_user: {e}")
+        return {"status": "error", "message": str(e)}

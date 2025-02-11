@@ -25,9 +25,10 @@ COLUMN_NAME_FIXES = {
     "nationality": "nationality",
 }
 
+
 def correct_column_names(sql_query):
     """
-    Corrects incorrect column names in SQL queries.
+    Corrects incorrect column names and ensures proper SQL syntax based on the database dialect.
     """
     COLUMN_NAME_FIXES = {
         "price": "pricing",
@@ -36,16 +37,21 @@ def correct_column_names(sql_query):
         "last name": "last_name",
         "date of birth": "date_of_birth",
         "nationality": "nationality",
-        "genre": "category",
-        "author": "authors"  # ✅ Books yerine 'authors' tablosunu kullan
+        "genre": "category"
     }
 
-    # Eğer SQL sorgusunda nationality eksikse düzelt
-    if "WHERE author LIKE '%Turkish%'" in sql_query:
-        sql_query = sql_query.replace("WHERE author LIKE '%Turkish%'", "WHERE nationality = 'Turkish'")
+    for wrong_name, correct_name in COLUMN_NAME_FIXES.items():
+        sql_query = sql_query.replace(wrong_name, correct_name)
 
-    print(f"🔄 Corrected SQL Query: {sql_query}")  
+    # ✅ SQL Server Kullanıyorsak `LIMIT 1` yerine `TOP 1` kullan
+    db_type = os.getenv("DATABASE_TYPE", "").lower()
+
+    if "sql server" in db_type:
+        sql_query = re.sub(r"LIMIT\s+1", "TOP 1", sql_query, flags=re.IGNORECASE)
+
+    print(f"✅ Corrected SQL Query: {sql_query}")  
     return sql_query
+
 
 
 def get_pyodbc_connection_string():
@@ -74,11 +80,13 @@ def generate_sql_query(user_input):
         system_message = (
             "You are an AI that generates SQL queries in JSON format from natural language questions. "
             "Ensure that the response is a pure JSON object without markdown formatting. "
-            "The database has two tables: 'books' and 'authors'. "
-            "If the question asks about the number of books, use COUNT(*) from 'books'. "
-            "If the question asks about the number of authors, use COUNT(*) from 'authors'. "
-            "If filtering by nationality (e.g., 'Turkish authors'), use 'authors' table and WHERE nationality='Turkish'. "
-            "If filtering by category (e.g., 'Drama books'), use 'books' table and WHERE category='Drama'. "
+            "The database has a 'books' table with the following columns: 'id', 'title', 'author', 'year', 'category', 'pricing'. "
+            "IMPORTANT RULES: "
+            "1️⃣ The 'books' table **DOES NOT** have a column named 'genre'. Use 'category' instead. "
+            "2️⃣ If searching for the cheapest or most expensive book, do NOT use MIN() or MAX() with SELECT title. "
+            "   Instead, use ORDER BY pricing ASC or DESC with LIMIT 1 (MySQL) or TOP 1 (SQL Server)."
+            "3️⃣ Do NOT use 'AS' with 'LIMIT 1' in SQL queries. Do not write 'LIMIT 1 AS lowest_price'. "
+            "4️⃣ If using an aggregate function like MIN() or MAX(), ensure that all non-aggregated columns are included in a GROUP BY clause."
             "Output format: {\"query\": \"SQL_QUERY_HERE\"}"
         )
 
@@ -99,14 +107,18 @@ def generate_sql_query(user_input):
         try:
             structured_query = json.loads(cleaned_sql_query)
             cleaned_query = clean_sql_query(structured_query.get("query", ""))
-        except json.JSONDecodeError:
-            print("❌ OpenAI response is not in JSON format!")
+        except (json.JSONDecodeError, TypeError):
+            print("❌ OpenAI response is not in JSON format or returned None!")
             return {"status": "error", "message": "Invalid JSON format from OpenAI response"}
 
         if not cleaned_query:
             return {"status": "error", "message": "Generated SQL query is empty"}
 
         corrected_query = correct_column_names(cleaned_query)
+        
+        if not corrected_query:  # Eğer SQL düzeltildikten sonra boşsa hata döndür
+            return {"status": "error", "message": "Final SQL query is empty after correction"}
+
         print(f"Final SQL Query: {corrected_query}")
 
         return corrected_query
@@ -114,6 +126,8 @@ def generate_sql_query(user_input):
     except Exception as e:
         print(f"Error generating SQL query: {e}")
         return {"status": "error", "message": str(e)}
+
+
 
 
 
