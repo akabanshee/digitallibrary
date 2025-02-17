@@ -84,9 +84,16 @@ def generate_sql_query(user_input):
             "IMPORTANT RULES: "
             "1️⃣ The 'books' table **DOES NOT** have a column named 'genre'. Use 'category' instead. "
             "2️⃣ If searching for the cheapest or most expensive book, do NOT use MIN() or MAX() with SELECT title. "
-            "   Instead, use ORDER BY pricing ASC or DESC with LIMIT 1 (MySQL) or TOP 1 (SQL Server)."
+            "   Instead, use ORDER BY pricing ASC or DESC with LIMIT 1 (MySQL) or TOP 1 (SQL Server). "
             "3️⃣ Do NOT use 'AS' with 'LIMIT 1' in SQL queries. Do not write 'LIMIT 1 AS lowest_price'. "
-            "4️⃣ If using an aggregate function like MIN() or MAX(), ensure that all non-aggregated columns are included in a GROUP BY clause."
+            "4️⃣ If using an aggregate function like MIN() or MAX(), ensure that all non-aggregated columns are included in a GROUP BY clause. "
+            "5️⃣ If the user is asking for **book price**, make sure to return only the 'pricing' column, like this: "
+            "   SELECT pricing FROM books WHERE title = '...' "
+            "6️⃣ If the user is asking for **book count**, make sure to return only the COUNT(*), like this: "
+            "   SELECT COUNT(*) FROM books "
+            "7️⃣ If the user is asking for **book details**, make sure to return all columns using: "
+            "   SELECT title, author, year, category, pricing FROM books "
+            "⚠️ DO NOT return COUNT(*) for book price questions! ⚠️"
             "Output format: {\"query\": \"SQL_QUERY_HERE\"}"
         )
 
@@ -115,8 +122,8 @@ def generate_sql_query(user_input):
             return {"status": "error", "message": "Generated SQL query is empty"}
 
         corrected_query = correct_column_names(cleaned_query)
-        
-        if not corrected_query:  # Eğer SQL düzeltildikten sonra boşsa hata döndür
+
+        if not corrected_query:  
             return {"status": "error", "message": "Final SQL query is empty after correction"}
 
         print(f"Final SQL Query: {corrected_query}")
@@ -126,11 +133,6 @@ def generate_sql_query(user_input):
     except Exception as e:
         print(f"Error generating SQL query: {e}")
         return {"status": "error", "message": str(e)}
-
-
-
-
-
 
 def execute_sql_query(sql_query):
     """
@@ -166,4 +168,3 @@ def execute_sql_query(sql_query):
     except Exception as e:
         print(f"Unexpected Error in execute_sql_query: {e}")
         return {"status": "error", "message": f"Unexpected Error: {e}"}
-
