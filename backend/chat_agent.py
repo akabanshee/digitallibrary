@@ -37,11 +37,24 @@ client = AzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
 )
 
-def chat_with_user(user_input):
+# Kullanıcıların konuşmalarını saklayacak bir sözlük
+chat_sessions = {}
+
+# Kullanıcıların konuşmalarını saklayacak bir sözlük
+chat_sessions = {}
+
+def chat_with_user(user_input, user_id="default_user"):
     """
     Uses OpenAI's function calling feature to determine if an SQL query is needed.
+    Keeps chat history for better follow-up responses.
     """
     try:
+        # Kullanıcının geçmiş konuşmalarını al
+        if user_id not in chat_sessions:
+            chat_sessions[user_id] = []  # Eğer user_id yoksa boş bir liste oluştur
+
+        chat_history = chat_sessions[user_id]  # Chat geçmişini al
+
         system_message = {
             "role": "system",
             "content": (
@@ -75,15 +88,15 @@ def chat_with_user(user_input):
             }
         ]
 
+        # Geçmiş konuşmaları ve yeni kullanıcı girişini ekle
+        messages = [system_message] + chat_history + [{"role": "user", "content": user_input}]
+
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
-            messages=[
-                system_message,
-                {"role": "user", "content": user_input}
-            ],
+            messages=messages,
             functions=function_definitions,
             function_call="auto",
-            max_tokens=300
+            max_tokens=500
         )
 
         response_message = response.choices[0].message
@@ -96,24 +109,21 @@ def chat_with_user(user_input):
                 return {"status": "error", "message": "Generated SQL query is empty"}
 
             corrected_sql = correct_column_names(sql_query)
-
-            if not corrected_sql:
-                return {"status": "error", "message": "Final SQL query is empty after correction"}
-
             sql_result = execute_sql_query(corrected_sql)
 
             if isinstance(sql_result, dict) and sql_result.get("status") == "error":
                 return {"status": "error", "message": "Oops! Something went wrong while searching for books. Try asking in a different way."}
 
-            # 📌 **GPT’yi Kullanarak Sonucu Doğru Formatlama (Tool Calling ile)**
+            # 📌 **GPT’ye Sonucu Doğru Formatlaması için Gönder**
             formatted_response = client.chat.completions.create(
                 model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
-                messages=[
-                    system_message,
-                    {"role": "user", "content": f"Format this SQL result into a user-friendly response:\n\n{sql_result}"}
-                ],
+                messages=messages + [{"role": "user", "content": f"Format this SQL result into a user-friendly response:\n\n{sql_result}"}],
                 max_tokens=500
             )
+
+            # Yanıtı geçmişe ekle
+            chat_history.append({"role": "assistant", "content": formatted_response.choices[0].message.content})
+            chat_sessions[user_id] = chat_history  # Güncellenmiş geçmişi sakla
 
             return {
                 "status": "success",
@@ -122,7 +132,15 @@ def chat_with_user(user_input):
             }
 
         else:
-            return {"status": "success", "type": "Chat", "data": response_message.content}
+            # Yanıtı geçmişe ekle
+            chat_history.append({"role": "assistant", "content": response_message.content})
+            chat_sessions[user_id] = chat_history  # Güncellenmiş geçmişi sakla
+
+            return {
+                "status": "success",
+                "type": "Chat",
+                "data": response_message.content
+            }
 
     except Exception as e:
         print(f"❌ Error in chat_with_user: {e}")

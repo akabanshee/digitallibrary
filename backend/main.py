@@ -335,22 +335,36 @@ def chat_to_sql_endpoint(request: UserRequest):
     response = chat_with_user(user_input)
     return {"response": response}
 
+# Kullanıcıların konuşmalarını saklayacak bir sözlük
+chat_sessions = {}
+
 @app.post("/process")
 def process_request(request: UserRequest):
     """
     Kullanıcının girdisini alır, sınıflandırır ve yanıt döndürür.
     """
     user_input = request.user_input.strip()
+    user_id = "default_user"  # Eğer çoklu kullanıcı desteği olacaksa, her kullanıcıya özgü bir ID eklenebilir.
 
     try:
-        # Kullanıcı girdisini analiz et
-        response = chat_with_user(user_input)
+        # Kullanıcının geçmiş konuşmalarını al (varsa)
+        if user_id not in chat_sessions:
+            chat_sessions[user_id] = []  # Kullanıcı ID yoksa boş bir liste oluştur
+
+        chat_history = chat_sessions[user_id]  # Chat geçmişini al
+
+        # Kullanıcı girdisini analiz et (chat geçmişi ile birlikte)
+        response = chat_with_user(user_input, user_id)
         sql_query = generate_sql_query(user_input)
 
         # API Yanıtlarını Logla (Debug İçin)
         print("📥 Received User Input:", user_input)
         print("📝 Generated SQL Query:", sql_query)
         print("💬 Chatbot Response:", response)
+
+        # Eğer yanıt başarılıysa, chat geçmişini güncelle
+        if response["status"] == "success":
+            chat_sessions[user_id] = response.get("chat_history", chat_history)  # Güncellenmiş chat geçmişini sakla
 
         # Eğer yanıt bir liste ise (SQL sorgusunun sonucu)
         if isinstance(response, dict) and response.get("type") == "SQL":
@@ -378,6 +392,7 @@ def process_request(request: UserRequest):
     except Exception as e:
         print("🚨 Error:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/search-web")
