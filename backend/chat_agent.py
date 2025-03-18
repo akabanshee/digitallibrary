@@ -1,31 +1,13 @@
-import os
-import json
-from openai import AzureOpenAI
-from dotenv import load_dotenv
-from sql_agent import generate_sql_query, execute_sql_query, correct_column_names  # ✅ Buraya ekledik!
-from web_search import search_web  
-import random
-
-# Çevre değişkenlerini yükleme
-load_dotenv()
-
-# Azure OpenAI istemcisini yapılandırma
-client = AzureOpenAI(
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-07-01-preview",
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-)
-
-
-import random
+# chat_agent.py
 
 import os
 import json
+import traceback
 from openai import AzureOpenAI
 from dotenv import load_dotenv
-from sql_agent import generate_sql_query, execute_sql_query, correct_column_names  # ✅ SQL Agent
-from web_search import search_web  # ✅ Web Arama Fonksiyonu
-import random
+
+# Manager'i import ediyoruz
+from manager import Manager
 
 # Çevre değişkenlerini yükleme
 load_dotenv()
@@ -40,37 +22,31 @@ client = AzureOpenAI(
 # Kullanıcıların konuşmalarını saklayacak bir sözlük
 chat_sessions = {}
 
-# Kullanıcıların konuşmalarını saklayacak bir sözlük
-chat_sessions = {}
-
-def chat_with_user(user_input, user_id="default_user"):
+def _base_chat_llm(user_input, user_id="default_user"):
     """
-    Uses OpenAI's function calling feature to determine if an SQL query is needed.
-    Keeps chat history for better follow-up responses.
+    Bu 'iç' fonksiyon, OpenAI ile sohbet çağrısını yapar.
+    Eski 'chat_with_user' fonksiyonunun mantığı korunur,
+    ancak function_call geldiğinde SQL sorgusu tetiklemek yerine
+    sadece function_call bilgisini döndürür.
     """
     try:
         # Kullanıcının geçmiş konuşmalarını al
         if user_id not in chat_sessions:
-            chat_sessions[user_id] = []  # Eğer user_id yoksa boş bir liste oluştur
+            chat_sessions[user_id] = []
 
-        chat_history = chat_sessions[user_id]  # Chat geçmişini al
+        chat_history = chat_sessions[user_id]
 
+        # Sisteme ait mesaj (prompt ayarları)
         system_message = {
             "role": "system",
             "content": (
                 "You are a friendly and engaging AI assistant. "
                 "When responding, use a natural, conversational tone. "
                 "If the user's question requires an SQL lookup, generate an SQL query and return a well-formatted response. "
-                "Start responses dynamically based on the context. "
-                "For example: "
-                "If it's about book count: 'There are a total of X books in the collection. 📚' "
-                "If it's about book details: 'Here’s the book you’re looking for!' "
-                "If it’s a general search: 'I found some great options for you. Let’s take a look!' "
-                "DO NOT start every response with the same phrase like 'Here’s what I found for you!'. "
-                "Always end responses with a polite follow-up like 'Let me know if you need anything else! 😊' or 'How else can I assist you today? 🤖'."
             )
         }
 
+        # SQL sorgusu gibi fonksiyon çağrılarını tanımlıyoruz
         function_definitions = [
             {
                 "name": "execute_sql_query",
@@ -88,9 +64,12 @@ def chat_with_user(user_input, user_id="default_user"):
             }
         ]
 
-        # Geçmiş konuşmaları ve yeni kullanıcı girişini ekle
-        messages = [system_message] + chat_history + [{"role": "user", "content": user_input}]
+        # Mesaj dizisini oluştur
+        messages = [system_message] + chat_history + [
+            {"role": "user", "content": user_input}
+        ]
 
+        # OpenAI ChatCompletion isteğini yap
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
             messages=messages,
@@ -100,48 +79,54 @@ def chat_with_user(user_input, user_id="default_user"):
         )
 
         response_message = response.choices[0].message
-        function_call = response_message.function_call  
+        function_call = response_message.function_call
 
-        if function_call and function_call.name == "execute_sql_query":
-            sql_query = json.loads(function_call.arguments)["sql_query"]
-
-            if not sql_query:
-                return {"status": "error", "message": "Generated SQL query is empty"}
-
-            corrected_sql = correct_column_names(sql_query)
-            sql_result = execute_sql_query(corrected_sql)
-
-            if isinstance(sql_result, dict) and sql_result.get("status") == "error":
-                return {"status": "error", "message": "Oops! Something went wrong while searching for books. Try asking in a different way."}
-
-            # 📌 **GPT’ye Sonucu Doğru Formatlaması için Gönder**
-            formatted_response = client.chat.completions.create(
-                model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
-                messages=messages + [{"role": "user", "content": f"Format this SQL result into a user-friendly response:\n\n{sql_result}"}],
-                max_tokens=500
-            )
-
-            # Yanıtı geçmişe ekle
-            chat_history.append({"role": "assistant", "content": formatted_response.choices[0].message.content})
-            chat_sessions[user_id] = chat_history  # Güncellenmiş geçmişi sakla
+        # Eğer bir function_call varsa, sorguyu burada çalıştırmak yerine
+        # sadece 'function_call' verisini döndürüyoruz.
+        if function_call:
+            # Örnek: sohbet geçmişine not düşmek isteyebilirsiniz (isteğe bağlı)
+            chat_history.append({
+                "role": "assistant",
+                "content": f"Function call: {function_call}"
+            })
+            chat_sessions[user_id] = chat_history
 
             return {
                 "status": "success",
                 "type": "Chat",
-                "data": formatted_response.choices[0].message.content
+                "data": "",  # Şimdilik metin cevabı yok
+                "function_call": {
+                    "name": function_call.name,
+                    "arguments": json.loads(function_call.arguments)
+                }
             }
-
         else:
-            # Yanıtı geçmişe ekle
+            # Hiç function_call yoksa, normal metin cevabı
             chat_history.append({"role": "assistant", "content": response_message.content})
-            chat_sessions[user_id] = chat_history  # Güncellenmiş geçmişi sakla
+            chat_sessions[user_id] = chat_history
 
             return {
                 "status": "success",
                 "type": "Chat",
-                "data": response_message.content
+                "data": response_message.content,
+                "function_call": None
             }
 
     except Exception as e:
-        print(f"❌ Error in chat_with_user: {e}")
-        return {"status": "error", "message": "Oops! Something went wrong on our side. Please try again later."}
+        error_details = traceback.format_exc()
+        print(f"❌ Error in _base_chat_llm:\n{error_details}")
+        return {
+            "status": "error",
+            "message": "Oops! Something went wrong on our side. Please try again later."
+        }
+
+# Manager örneğini oluşturuyoruz
+manager = Manager()
+
+def chat_with_user(user_input, user_id="default_user"):
+    """
+    'main.py' veya diğer dosyalardan import edilen, 'dışa açık' fonksiyon.
+    Arka planda Manager'ı kullanarak _base_chat_llm'i çağırır.
+    Böylece function_call varsa SQL sorgusunu Manager orkestre eder.
+    """
+    return manager.handle_chat_message(_base_chat_llm, user_input, user_id)
