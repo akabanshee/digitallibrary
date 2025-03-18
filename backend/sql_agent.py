@@ -5,10 +5,10 @@ import re
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
-# .env içeriğini yükle
+# .env içeriğini yükle (DATABASE_TYPE gibi ortam değişkenlerini de okuyabilir)
 load_dotenv()
 
-# Azure OpenAI istemcisi
+# Azure OpenAI istemcisi (SQL sorgusu oluştururken istersen kullanılabilir)
 client = AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version="2024-07-01-preview",
@@ -16,6 +16,7 @@ client = AzureOpenAI(
 )
 
 # Yanlış sütun adlarını düzeltmek için bir eşleme sözlüğü
+# (Aşağıdaki dictionary, örneğin 'genre' yerine 'category' gibi düzeltmeler yapabilir.)
 COLUMN_NAME_FIXES = {
     "price": "pricing",
     "author": "author_id",
@@ -25,11 +26,13 @@ COLUMN_NAME_FIXES = {
     "nationality": "nationality",
 }
 
-
 def correct_column_names(sql_query):
     """
-    Corrects incorrect column names and ensures proper SQL syntax based on the database dialect.
+    Yanlış veya eksik sütun adlarını düzeltir, ayrıca
+    veritabanı türüne göre SQL sözdizimini düzenler (örneğin 'LIMIT' yerine 'TOP').
     """
+    # Bu dictionary'yi fonksiyon içinde tanımlıyoruz ki
+    # ek düzeltmeler yapılabilsin:
     COLUMN_NAME_FIXES = {
         "price": "pricing",
         "author_id": "author",
@@ -40,21 +43,25 @@ def correct_column_names(sql_query):
         "genre": "category"
     }
 
+    # 1) Yanlış sütun adlarını doğru sütun adlarıyla değiştir
     for wrong_name, correct_name in COLUMN_NAME_FIXES.items():
         sql_query = sql_query.replace(wrong_name, correct_name)
 
-    # ✅ SQL Server Kullanıyorsak `LIMIT 1` yerine `TOP 1` kullan
+    # 2) Veritabanı türüne göre (SQL Server) 'LIMIT 1' -> 'TOP 1' dönüşümü yap
     db_type = os.getenv("DATABASE_TYPE", "").lower()
-
     if "sql server" in db_type:
+        # LIMIT 1 ifadesini TOP 1 ile değiştirmek için regex kullanıyoruz.
+        # (Not: Bu basit bir yaklaşımdır, bazen SELECT'e 'TOP 1' eklemeniz gerekir)
         sql_query = re.sub(r"LIMIT\s+1", "TOP 1", sql_query, flags=re.IGNORECASE)
 
     print(f"✅ Corrected SQL Query: {sql_query}")  
     return sql_query
 
-
-
 def get_pyodbc_connection_string():
+    """
+    .env dosyasındaki bilgilere göre pyodbc bağlantı stringi oluşturur.
+    (SQL Server'a bağlanmak için gerekli sürücü ve parametreler)
+    """
     return (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
         f"Server=tcp:{os.getenv('DATABASE_SERVER')},1433;"
@@ -67,6 +74,10 @@ def get_pyodbc_connection_string():
     )
 
 def clean_sql_query(sql_query):
+    """
+    Kullanıcıya veya OpenAI'ye ait fazladan ```
+    gibi ifadeleri temizler, sadece gerçek SQL sorgusunu bırakır.
+    """
     sql_query = sql_query.strip()
     sql_query = re.sub(r"^```sql\s*", "", sql_query)
     sql_query = re.sub(r"^```\s*", "", sql_query)
@@ -74,9 +85,14 @@ def clean_sql_query(sql_query):
 
 def generate_sql_query(user_input):
     """
-    Generates an SQL query based on the user's input.
+    Kullanıcının doğal dildeki isteğine karşılık bir SQL sorgusu üretir.
+    OpenAI ChatCompletion'u kullanarak, prompt içindeki kurallara
+    uygun biçimde JSON formatında yanıt bekler:
+      { "query": "SQL_QUERY_HERE" }
     """
     try:
+        # System mesajı: OpenAI'ye "Sen bir SQL üreten AI'sın" diyor
+        # ve çeşitli kurallar anlatıyor.
         system_message = (
             "You are an AI that generates SQL queries in JSON format from natural language questions. "
             "Ensure that the response is a pure JSON object without markdown formatting. "
@@ -97,8 +113,9 @@ def generate_sql_query(user_input):
             "Output format: {\"query\": \"SQL_QUERY_HERE\"}"
         )
 
+        # OpenAI ChatCompletion
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_DEPLOYMENT_NAME"),
+            model=os.getenv("OPENAI_DEPLOYMENT_NAME"),  # .env'den model adı
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_input}
@@ -106,13 +123,17 @@ def generate_sql_query(user_input):
             max_tokens=150
         )
 
+        # 1) OpenAI'den gelen yanıtı okuyoruz
         raw_sql_query = response.choices[0].message.content.strip()
         print(f"Generated Raw SQL: {raw_sql_query}")
 
+        # 2) Yanıt içindeki ```json ...``` gibi formatlamaları temizle
         cleaned_sql_query = re.sub(r"^```json\s*|\s*```$", "", raw_sql_query).strip()
         
+        # 3) JSON olup olmadığını kontrol edip parse ediyoruz
         try:
             structured_query = json.loads(cleaned_sql_query)
+            # "query" alanını alıp fazladan Markdown veya ``` işaretlerini temizliyoruz
             cleaned_query = clean_sql_query(structured_query.get("query", ""))
         except (json.JSONDecodeError, TypeError):
             print("❌ OpenAI response is not in JSON format or returned None!")
@@ -121,13 +142,13 @@ def generate_sql_query(user_input):
         if not cleaned_query:
             return {"status": "error", "message": "Generated SQL query is empty"}
 
+        # 4) Sütun adlarını vs. düzeltelim (price -> pricing, author -> author_id vb.)
         corrected_query = correct_column_names(cleaned_query)
 
         if not corrected_query:  
             return {"status": "error", "message": "Final SQL query is empty after correction"}
 
         print(f"Final SQL Query: {corrected_query}")
-
         return corrected_query
 
     except Exception as e:
@@ -136,35 +157,47 @@ def generate_sql_query(user_input):
 
 def execute_sql_query(sql_query):
     """
-    SQL sorgusunu çalıştırır ve sonuçları JSON formatında döner.
+    Verilen SQL sorgusunu pyodbc ile çalıştırır, sonucu JSON formatında döndürür:
+      [ {column: value, ...}, ... ]
+
+    Eğer hata oluşursa veya veri yoksa yine { "status": "error", "message": "..." } döner.
     """
     try:
+        # 1) Sorgu uygun mu?
         if not isinstance(sql_query, str) or sql_query.strip() == "":
             print("❌ SQL Query string değil veya boş!")
             return {"status": "error", "message": "Invalid SQL query"}
 
         print(f"Executing SQL Query: {sql_query}")  # Log SQL Query
+
+        # 2) Veritabanı bağlantı dizesi al
         conn_string = get_pyodbc_connection_string()
+        # 3) Bağlan ve sorguyu çalıştır
         conn = pyodbc.connect(conn_string, timeout=60)
         cursor = conn.cursor()
         cursor.execute(sql_query)
 
+        # 4) Sonuç sütunlarını al, veriyi dictionary listesi şeklinde dön
         columns = [column[0] for column in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
 
         print(f"SQL Results: {results}")  # Log the results
 
+        # 5) Eğer sonuç yoksa hata mesajı dönüyoruz
         if not results:
             return {"status": "error", "message": "No matching data found."}
         return results
 
     except pyodbc.OperationalError as e:
+        # Örn: Zaman aşımı, sunucuya ulaşamama vs.
         print(f"SQL Timeout Error: {e}")
         return {"status": "error", "message": "SQL Timeout Error: Server is unreachable or connection took too long."}
     except pyodbc.Error as e:
+        # PyODBC kaynaklı diğer hatalar
         print(f"SQL Execution Error: {e}")
         return {"status": "error", "message": f"SQL Execution Error: {e}"}
     except Exception as e:
+        # Beklenmeyen diğer hatalar
         print(f"Unexpected Error in execute_sql_query: {e}")
         return {"status": "error", "message": f"Unexpected Error: {e}"}
