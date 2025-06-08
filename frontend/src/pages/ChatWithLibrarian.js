@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Container,
   Typography,
@@ -8,59 +8,83 @@ import {
   Paper,
   CircularProgress,
   IconButton,
-  Card,
-  CardContent,
-  CardActions,
-  Link as MuiLink
 } from "@mui/material";
 import { ArrowBack } from "@mui/icons-material";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { marked } from "marked";
+import dayjs from "dayjs";
+
 
 const ChatWithLibrarian = () => {
   const [userInput, setUserInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [chatHistory, setChatHistory] = useState([
-    { sender: "ai", message: "Hello! I am your library assistant. How can I help you today?" },
+    {
+      sender: "ai",
+      message: "Hello! I am your library assistant. How can I help you today?",
+      timestamp: dayjs().format("HH:mm"),
+    },
   ]);
+  
+  const chatEndRef = useRef(null); // 👀 Otomatik scroll için referans
+
+  // 👇 Scroll fonksiyonu
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // 👇 Her mesajdan sonra scroll
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatHistory]);
 
   const handleSendMessage = async () => {
     if (!userInput.trim()) return;
-
-    setChatHistory((prev) => [...prev, { sender: "user", message: userInput }]);
+  
+    const currentInput = userInput;
+    const now = dayjs().format("HH:mm"); // 🕒
+  
+    setUserInput("");
+    setChatHistory((prev) => [
+      ...prev,
+      { sender: "user", message: currentInput, timestamp: now },
+    ]);
     setLoading(true);
-
+  
     try {
       const response = await axios.post("http://127.0.0.1:8000/process", {
-        user_input: userInput,
+        user_input: currentInput,
       });
-
-      console.log("📡 API Full Response:", response.data);
-
+  
       const { status, type, data, message } = response.data;
       let aiMessage;
-
+  
       if (status === "success") {
-        if (type === "SQL") {
-          if (Array.isArray(data) && data.length > 0) {
-            aiMessage = marked(data); // Markdown'u HTML formatına çeviriyoruz
-          }
-        } else {
-          aiMessage = marked(data);
-        }
+        aiMessage = marked(data);
       } else {
         aiMessage = `❌ ${message || "An error occurred."}`;
       }
-
-      setChatHistory((prev) => [...prev, { sender: "ai", message: aiMessage }]);
+  
+      setChatHistory((prev) => [
+        ...prev,
+        { sender: "ai", message: aiMessage, timestamp: dayjs().format("HH:mm") },
+      ]);
     } catch (error) {
       console.error("🚨 API Error:", error);
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          sender: "ai",
+          message: "❌ An error occurred while processing your request.",
+          timestamp: dayjs().format("HH:mm"),
+        },
+      ]);
     } finally {
-      setUserInput("");
       setLoading(false);
     }
   };
+  
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: "#f5f5f5" }}>
@@ -93,18 +117,34 @@ const ChatWithLibrarian = () => {
                     msg.message
                   )}
                 </Typography>
+                {/* 🕒 İşte zaman damgası burada! */}
+      <Typography
+        variant="caption"
+        sx={{ display: "block", mt: 1, color: "gray", fontSize: "12px" }}
+      >
+        {msg.timestamp}
+      </Typography>
               </Box>
             </Box>
           ))}
+          <div ref={chatEndRef} /> {/* 👇 Scroll noktası */}
         </Paper>
         <Paper elevation={3} sx={{ p: 3, display: "flex", gap: 2, borderRadius: "12px", boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)" }}>
           <TextField 
             label="Type your question here..." 
             variant="outlined" 
             fullWidth 
+            multiline
+            minRows={1}
+            maxRows={4}
             value={userInput} 
             onChange={(e) => setUserInput(e.target.value)} 
-            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()} 
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
             sx={{ borderRadius: "8px" }} 
           />
           <Button 

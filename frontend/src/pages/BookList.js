@@ -65,9 +65,13 @@ const BookList = () => {
     };
 
     const handleClearFilter = () => {
-        setFilterYear(""); // Yıl filtresini sıfırla
-        fetchBooks(); // Tüm kitapları tekrar getir
+        setFilterYear("");
+        setFilterMinPrice("");
+        setFilterMaxPrice("");
+        setFilterCategory("");
+        fetchBooks();
     };
+    
 
 
 
@@ -108,18 +112,18 @@ const BookList = () => {
         try {
             const formData = new FormData();
             formData.append("title", newBook.title);
-            formData.append("author_id", newBook.author_id);
-            formData.append("year", newBook.year);
-            formData.append("pricing", newBook.pricing);
+            formData.append("author_id", parseInt(newBook.author_id));
+            formData.append("year", parseInt(newBook.year));
+            formData.append("pricing", parseFloat(newBook.pricing));
             formData.append("category", newBook.category);
-            if (newBook.file) formData.append("file", newBook.file);
-
-            await axios.post("/books", formData, {
+            if (newBook.file) formData.append("pdf_file", newBook.file); // ✅ doğru field adı
+    
+            await axios.post("/books/", formData, {
                 headers: {
                     "Content-Type": "multipart/form-data",
                 },
             });
-
+    
             fetchBooks();
             setShowAddForm(false);
             setNewBook({
@@ -131,9 +135,11 @@ const BookList = () => {
                 file: null,
             });
         } catch (error) {
-            console.error("Error adding book:", error);
+            console.error("Error adding book:", error.response?.data || error.message);
+            alert("Kitap eklenemedi: " + (error.response?.data?.detail || "Form verisi hatalı olabilir."));
         }
     };
+    
 
     const handleUpdateBook = async () => {
         try {
@@ -236,20 +242,24 @@ const BookList = () => {
                     style={{ marginRight: "10px" }}
                 />
                 <TextField
-                    select
-                    label="Category"
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    style={{ marginRight: "50px" }}
-                >
-                <MenuItem value="">All Categories</MenuItem>
-                <MenuItem value="Bilim Kurgu">Science Fiction</MenuItem>
-                <MenuItem value="Otobiyografi">Autobiography</MenuItem>
-                <MenuItem value="Drama">Drama</MenuItem>
-                <MenuItem value="Biyografi">Biography</MenuItem>
-                <MenuItem value="Roman">Novel</MenuItem>
-                <MenuItem value="Siir">Poem</MenuItem>
-                </TextField>
+  select
+  label="Category"
+  value={filterCategory}  // ✅ Doğru state
+  onChange={(e) => setFilterCategory(e.target.value)}  // ✅ Doğru handler
+  style={{ marginRight: "10px", width: "200px" }}
+  fullWidth
+>
+  <MenuItem value="">Select Category</MenuItem>
+  <MenuItem value="Bilim Kurgu">Science Fiction</MenuItem>
+  <MenuItem value="Otobiyografi">Autobiography</MenuItem>
+  <MenuItem value="Drama">Drama</MenuItem>
+  <MenuItem value="Biyografi">Biography</MenuItem>
+  <MenuItem value="Roman">Novel</MenuItem>
+  <MenuItem value="Siir">Poem</MenuItem>
+</TextField>
+
+
+
                 <Button
                     variant="contained"
                     color="primary"
@@ -267,109 +277,105 @@ const BookList = () => {
                 </Button>
             </Box>
             {showAddForm && (
-                <Card style={{ marginBottom: "20px" }}>
-                    <CardContent>
-                        <Typography variant="h6" gutterBottom>
-                            Add New Book
-                        </Typography>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12}>
-                                <TextField
-                                    label="Title"
-                                    name="title"
-                                    value={newBook.title}
-                                    onChange={handleInputChange}
-                                    fullWidth
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    select
-                                    label="Author"
-                                    name="author_id"
-                                    value={newBook.author_id}
-                                    onChange={handleInputChange}
-                                    fullWidth
-                                >
-                                    <MenuItem value="">Select Author</MenuItem>
-                                    {authors.map((author) => (
-                                        <MenuItem key={author.id} value={author.id}>
-                                            {author.first_name} {author.last_name}
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Year"
-                                    name="year"
-                                    type="number"
-                                    value={newBook.year}
-                                    onChange={handleInputChange}
-                                    fullWidth
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={3}>
-                            <TextField
-                                select
-                                label="Category"
-                                value={filterCategory}
-                                onChange={(e) => setFilterCategory(e.target.value)}
-                                style={{
-                                    marginRight: "10px",
-                                    width: "200px", // Bu alanı kesin olarak 200px genişletir
-                                }}
-                                fullWidth // Tam genişlik özelliği eklendi
-                            >
-                            <MenuItem value="">All Categories</MenuItem>
-                            <MenuItem value="Bilim Kurgu">Science Fiction</MenuItem>
-                            <MenuItem value="Otobiyografi">Autobiography</MenuItem>
-                            <MenuItem value="Drama">Drama</MenuItem>
-                            <MenuItem value="Biyografi">Biography</MenuItem>
-                            <MenuItem value="Roman">Novel</MenuItem>
-                            <MenuItem value="Siir">Poem</MenuItem>
-                            </TextField>
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Pricing"
-                                    name="pricing"
-                                    type="number"
-                                    value={newBook.pricing}
-                                    onChange={handleInputChange}
-                                    fullWidth
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <Button
-                                    variant="contained"
-                                    component="label"
-                                    style={{ marginBottom: "10px" }}
-                                >
-                                    Upload PDF
-                                    <input
-                                        type="file"
-                                        hidden
-                                        accept="application/pdf"
-                                        onChange={handleFileChange}
-                                    />
-                                </Button>
-                                {newBook.file && (
-                                    <Typography variant="body2">
-                                        Selected File: {newBook.file.name}
-                                    </Typography>
-                                )}
-                            </Grid>
-                        </Grid>
-                        <Box mt={2}>
-                            <Button variant="contained" color="success" onClick={handleAddBook}>
-                                Submit
-                            </Button>
-                        </Box>
-                    </CardContent>
-                </Card>
-            )}
-
+  <Card style={{ marginBottom: "20px" }}>
+    <CardContent>
+      <Typography variant="h6" gutterBottom>
+        Add New Book
+      </Typography>
+      <Grid container spacing={2}>
+        <Grid item xs={12}>
+          <TextField
+            label="Title"
+            name="title"
+            value={newBook.title}
+            onChange={handleInputChange}
+            fullWidth
+          />
+        </Grid>
+        <Grid item xs={12}>
+          <TextField
+            select
+            label="Author"
+            name="author_id"
+            value={newBook.author_id}
+            onChange={handleInputChange}
+            fullWidth
+          >
+            <MenuItem value="">Select Author</MenuItem>
+            {authors.map((author) => (
+              <MenuItem key={author.id} value={author.id}>
+                {author.first_name} {author.last_name}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Grid>
+        <Grid item xs={6}>
+          <TextField
+            label="Year"
+            name="year"
+            type="number"
+            value={newBook.year}
+            onChange={handleInputChange}
+            fullWidth
+          />
+        </Grid>
+        <Grid item xs={6}>
+          <TextField
+            select
+            label="Category"
+            name="category"
+            value={newBook.category}
+            onChange={handleInputChange}
+            fullWidth
+          >
+            <MenuItem value="">Select Category</MenuItem>
+            <MenuItem value="Bilim Kurgu">Science Fiction</MenuItem>
+            <MenuItem value="Otobiyografi">Autobiography</MenuItem>
+            <MenuItem value="Drama">Drama</MenuItem>
+            <MenuItem value="Biyografi">Biography</MenuItem>
+            <MenuItem value="Roman">Novel</MenuItem>
+            <MenuItem value="Siir">Poem</MenuItem>
+          </TextField>
+        </Grid>
+        <Grid item xs={6}>
+          <TextField
+            label="Pricing"
+            name="pricing"
+            type="number"
+            value={newBook.pricing}
+            onChange={handleInputChange}
+            fullWidth
+          />
+        </Grid>
+        <Grid item xs={6}>
+          <Button
+            variant="contained"
+            component="label"
+            style={{ marginBottom: "10px" }}
+          >
+            Upload PDF
+            <input
+              type="file"
+              hidden
+              accept="application/pdf"
+              onChange={handleFileChange}
+            />
+          </Button>
+          {newBook.file && (
+            <Typography variant="body2">
+              Selected File: {newBook.file.name}
+            </Typography>
+          )}
+        </Grid>
+      </Grid>
+      <Box mt={2}>
+        <Button variant="contained" color="success" onClick={handleAddBook}>
+          Submit
+        </Button>
+      </Box>
+    </CardContent>
+  </Card>
+)}
             {showUpdateForm && (
                 <Card style={{ marginBottom: "20px" }}>
                     <CardContent>
@@ -414,24 +420,27 @@ const BookList = () => {
                                 />
                             </Grid>
                             <Grid item xs={12} md={4}>
-                            <TextField
-                                    select
-                                    label="Category"
-                                    value={filterCategory}
-                                    onChange={(e) => setFilterCategory(e.target.value)}
-                                    fullWidth
-                                    InputProps={{
-                                    style: { minWidth: "200px" }, // Minimum genişlik belirtiyoruz
-                                    }}
-                                >                       
-                                    <MenuItem value="Bilim Kurgu">Science Fiction</MenuItem>
-                                    <MenuItem value="Otobiyografi">Autobiography</MenuItem>
-                                    <MenuItem value="Drama">Drama</MenuItem>
-                                    <MenuItem value="Biyografi">Biography</MenuItem>
-                                    <MenuItem value="Roman">Novel</MenuItem>
-                                    <MenuItem value="Siir">Poem</MenuItem>
-                            </TextField>
-                            </Grid>
+  <TextField
+    select
+    label="Category"
+    name="category"
+    value={selectedBook.category}
+    onChange={handleInputChange}
+    fullWidth
+    InputProps={{
+      style: { minWidth: "200px" },
+    }}
+  >
+    <MenuItem value="">Select Category</MenuItem>
+    <MenuItem value="Bilim Kurgu">Science Fiction</MenuItem>
+    <MenuItem value="Otobiyografi">Autobiography</MenuItem>
+    <MenuItem value="Drama">Drama</MenuItem>
+    <MenuItem value="Biyografi">Biography</MenuItem>
+    <MenuItem value="Roman">Novel</MenuItem>
+    <MenuItem value="Siir">Poem</MenuItem>
+  </TextField>
+</Grid>
+
                             <Grid item xs={6}>
                                 <TextField
                                     label="Pricing"
@@ -492,7 +501,7 @@ const BookList = () => {
                                     <Typography variant="h6" style={{ fontWeight: 'bold', color: "#2C3E50" }}>{book.title}</Typography>
                                     <Typography style={{ color: "#34495E" }}>Author: {book.author}</Typography>
                                     <Typography style={{ color: "#7F8C8D" }}>Year: {book.year}</Typography>
-                                    <Typography style={{ color: "#27AE60", fontWeight: 'bold' }}>Price: ${book.pricing}</Typography>
+                                    <Typography style={{ color: "#27AE60", fontWeight: 'bold' }}>Price: ₺{book.pricing}</Typography>
                                     <Typography style={{ color: "#3498DB", fontSize: "0.9em" }}>Category: {book.category}</Typography>
                                 </Box>
                                 <Box>

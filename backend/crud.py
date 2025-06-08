@@ -172,3 +172,9 @@ def get_filtered_books(
     if category:
         query = query.filter(BookModel.category == category)
     return query.all()
+
+def get_author_by_name(db: Session, first_name: str, last_name: str):
+    return db.query(AuthorModel).filter(
+        AuthorModel.first_name == first_name,
+        AuthorModel.last_name == last_name
+    ).first()

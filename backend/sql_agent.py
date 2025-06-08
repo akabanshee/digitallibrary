@@ -97,6 +97,7 @@ def generate_sql_query(user_input):
             "You are an AI that generates SQL queries in JSON format from natural language questions. "
             "Ensure that the response is a pure JSON object without markdown formatting. "
             "The database has a 'books' table with the following columns: 'id', 'title', 'author', 'year', 'category', 'pricing'. "
+            "'authors' table with columns: 'id', 'first_name', 'last_name', 'date_of_birth', 'nationality'. \n"
             "IMPORTANT RULES: "
             "1️⃣ The 'books' table **DOES NOT** have a column named 'genre'. Use 'category' instead. "
             "2️⃣ If searching for the cheapest or most expensive book, do NOT use MIN() or MAX() with SELECT title. "
@@ -111,6 +112,10 @@ def generate_sql_query(user_input):
             "   SELECT title, author, year, category, pricing FROM books "
             "⚠️ DO NOT return COUNT(*) for book price questions! ⚠️"
             "Output format: {\"query\": \"SQL_QUERY_HERE\"}"
+            "8️⃣ If the user is asking for a list of authors, use:\n"
+        "    SELECT first_name, last_name FROM authors \n"
+        "9️⃣ The 'authors' table DOES NOT contain a 'name' column. Use 'first_name' and 'last_name' instead.\n"
+
         )
 
         # OpenAI ChatCompletion

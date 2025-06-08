@@ -406,3 +406,11 @@ def web_search_endpoint(request: UserRequest):
     except Exception as e:
         return {"error": str(e)}
     
+@app.post("/authors", response_model=schemas.Author)
+def create_author(author: schemas.AuthorCreate, db: Session = Depends(get_db)):
+    db_author = crud.get_author_by_name(
+        db=db, first_name=author.first_name, last_name=author.last_name
+    )
+    if db_author:
+        raise HTTPException(status_code=400, detail="Author already exists")
+    return crud.create_author(db=db, author=author)
