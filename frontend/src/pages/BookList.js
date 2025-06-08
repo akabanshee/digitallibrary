@@ -88,12 +88,15 @@ const BookList = () => {
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
+        const parsedValue = name === "author_id" ? parseInt(value) : value;
+    
         if (showUpdateForm) {
-            setSelectedBook({ ...selectedBook, [name]: value });
+            setSelectedBook({ ...selectedBook, [name]: parsedValue });
         } else {
-            setNewBook({ ...newBook, [name]: value });
+            setNewBook({ ...newBook, [name]: parsedValue });
         }
     };
+    
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];

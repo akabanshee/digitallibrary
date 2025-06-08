@@ -93,7 +93,8 @@ const ChatWithLibrarian = () => {
           <ArrowBack />
         </IconButton>
         <Typography variant="h5" fontWeight="bold" sx={{ flex: 1, textAlign: "center" }}>
-          AI-Powered Library Assistant
+          AI-Powered Library Assistant<br />
+          Feel free to ask questions about your library collection!
         </Typography>
       </Box>
       <Container maxWidth="md" sx={{ py: 4, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>

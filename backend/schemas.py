@@ -38,11 +38,13 @@ class BookCreate(BookBase):
 
 class BookResponse(BookBase):
     id: int
+    author_id: int  # 🔥 Bunu ekle
     file_path: Optional[str] = None
-    author: Optional[str] = None  # Bu alan artık birleştirilmiş yazar adını tutacak (string)
+    author: Optional[str] = None
 
     class Config:
         orm_mode = True
+
 
 class Author(AuthorBase):
     id: int

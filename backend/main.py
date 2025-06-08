@@ -189,15 +189,42 @@ def update_author(
         raise HTTPException(status_code=404, detail="Author not found")
     return updated_author
 
-# Endpoint to update a book
+from fastapi import Form, File, UploadFile
+
 @app.put("/books/{book_id}", response_model=schemas.BookResponse)
 def update_book(
-    book_id: int, book: schemas.BookCreate, db: Session = Depends(get_db)
+    book_id: int,
+    title: str = Form(...),
+    year: int = Form(...),
+    category: BookCategory = Form(...),
+    pricing: float = Form(...),
+    author_id: int = Form(...),
+    pdf_file: UploadFile = File(None),
+    db: Session = Depends(get_db)
 ):
-    updated_book = crud.update_book(db=db, book_id=book_id, book=book)
-    if not updated_book:
+    book_data = schemas.BookCreate(
+        title=title,
+        year=year,
+        category=category,
+        pricing=pricing,
+        author_id=author_id
+    )
+
+    # Eğer PDF dosyası varsa Azure'a yüklenebilir
+    file_path = None
+    if pdf_file:
+        if not utils.is_pdf(pdf_file.filename):
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid PDF")
+        file_path = utils.upload_file_to_azure(container_client, pdf_file.file, pdf_file.filename)
+
+    updated = crud.update_book(db=db, book_id=book_id, book=book_data)
+    if not updated:
         raise HTTPException(status_code=404, detail="Book not found")
-    return updated_book
+
+    # Eğer dosya yüklendiyse, file_path güncellemesi burada yapılabilir
+
+    return updated
+
 
 
 @app.get("/books/{book_id}/download")
