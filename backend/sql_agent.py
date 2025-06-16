@@ -19,43 +19,54 @@ client = AzureOpenAI(
 # (Aşağıdaki dictionary, örneğin 'genre' yerine 'category' gibi düzeltmeler yapabilir.)
 COLUMN_NAME_FIXES = {
     "price": "pricing",
-    "author": "author_id",
+    "genre": "category",
     "first name": "first_name",
     "last name": "last_name",
     "date of birth": "date_of_birth",
-    "nationality": "nationality",
+    "nationality": "nationality"
 }
+
 
 def correct_column_names(sql_query):
     """
-    Yanlış veya eksik sütun adlarını düzeltir, ayrıca
-    veritabanı türüne göre SQL sözdizimini düzenler (örneğin 'LIMIT' yerine 'TOP').
+    Replaces incorrect column names ONLY if they are standalone or unqualified.
+    Does NOT replace within qualified names like a.first_name.
     """
-    # Bu dictionary'yi fonksiyon içinde tanımlıyoruz ki
-    # ek düzeltmeler yapılabilsin:
+
     COLUMN_NAME_FIXES = {
         "price": "pricing",
-        "author_id": "author",
+        "genre": "category",
         "first name": "first_name",
         "last name": "last_name",
         "date of birth": "date_of_birth",
-        "nationality": "nationality",
-        "genre": "category"
+        "nationality": "nationality"
     }
 
-    # 1) Yanlış sütun adlarını doğru sütun adlarıyla değiştir
-    for wrong_name, correct_name in COLUMN_NAME_FIXES.items():
-        sql_query = sql_query.replace(wrong_name, correct_name)
+    # Sadece unqualified (a. veya b. gibi prefix olmayan) isimleri değiştir
+    for wrong, correct in COLUMN_NAME_FIXES.items():
+        # Replace only if not preceded by a dot (.)
+        # örnek: "author" değil "b.author" yazıyorsa dokunma
+        sql_query = re.sub(
+            rf"(?<!\.)\b{re.escape(wrong)}\b",
+            correct,
+            sql_query,
+            flags=re.IGNORECASE
+        )
+    sql_query = re.sub(r"\bLENGTH\s*\(", "LEN(", sql_query, flags=re.IGNORECASE)
+    # SQL Server uyumluluğu: LENGTH ve CHAR_LENGTH → LEN dönüşümü
+    sql_query = re.sub(r"\b(LENGTH|CHAR_LENGTH)\s*\(", "LEN(", sql_query, flags=re.IGNORECASE)
 
-    # 2) Veritabanı türüne göre (SQL Server) 'LIMIT 1' -> 'TOP 1' dönüşümü yap
+    # SQL Server için LIMIT → TOP dönüştür
     db_type = os.getenv("DATABASE_TYPE", "").lower()
     if "sql server" in db_type:
-        # LIMIT 1 ifadesini TOP 1 ile değiştirmek için regex kullanıyoruz.
-        # (Not: Bu basit bir yaklaşımdır, bazen SELECT'e 'TOP 1' eklemeniz gerekir)
-        sql_query = re.sub(r"LIMIT\s+1", "TOP 1", sql_query, flags=re.IGNORECASE)
+        if "LIMIT 1" in sql_query.upper():
+            sql_query = re.sub(r"SELECT\s+", "SELECT TOP 1 ", sql_query, flags=re.IGNORECASE)
+            sql_query = re.sub(r"LIMIT\s+1", "", sql_query, flags=re.IGNORECASE)
 
-    print(f"✅ Corrected SQL Query: {sql_query}")  
-    return sql_query
+    print(f"✅ Corrected SQL Query: {sql_query}")
+    return sql_query.strip()
+
+
 
 def get_pyodbc_connection_string():
     """
@@ -115,12 +126,24 @@ def generate_sql_query(user_input):
             "8️⃣ If the user is asking for a list of authors, use:\n"
         "    SELECT first_name, last_name FROM authors \n"
         "9️⃣ The 'authors' table DOES NOT contain a 'name' column. Use 'first_name' and 'last_name' instead.\n"
-
+        "🔟 The 'author' column in 'books' is a full name (first_name + ' ' + last_name)."
+        "👉 To filter by author's first name, you must use a JOIN:"
+        "SELECT ... FROM books b JOIN authors a ON b.author = CONCAT(a.first_name, ' ', a.last_name) WHERE a.first_name != 'Orhan'"
+        "The books table has a 'author_id' column that is a foreign key to authors.id. "
+        "To filter by author first or last name, you must use a JOIN on books.author_id = authors.id. "
+        "Do NOT join via 'author = CONCAT(...)'."
+        "📚 The 'category' column in the database uses Turkish values. When users ask for categories in English, map them as follows:\n"
+        " - 'Science Fiction' → 'Bilim Kurgu'\n"
+        " - 'Autobiography' → 'Otobiyografi'\n"
+        " - 'Drama' → 'Drama'\n"
+        " - 'Biography' → 'Biyografi'\n"
+        " - 'Novel' → 'Roman'\n"
+        " - 'Poem' → 'Siir'\n"
         )
 
         # OpenAI ChatCompletion
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_DEPLOYMENT_NAME"),  # .env'den model adı
+            model=os.getenv("OPENAI_DEPLOYMENT_NAME"),  # .envden model adı
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_input}
@@ -199,9 +222,20 @@ def execute_sql_query(sql_query):
         print(f"SQL Timeout Error: {e}")
         return {"status": "error", "message": "SQL Timeout Error: Server is unreachable or connection took too long."}
     except pyodbc.Error as e:
-        # PyODBC kaynaklı diğer hatalar
-        print(f"SQL Execution Error: {e}")
-        return {"status": "error", "message": f"SQL Execution Error: {e}"}
+        error_msg = str(e)
+        print(f"SQL Execution Error: {error_msg}")
+        
+        if "Invalid column name" in error_msg:
+            return {
+                "status": "semantic_error",
+                "message": "The SQL query is trying to access a column that does not exist in the database."
+            }
+
+        return {
+            "status": "error",
+            "message": f"SQL Execution Error: {error_msg}"
+        }
+
     except Exception as e:
         # Beklenmeyen diğer hatalar
         print(f"Unexpected Error in execute_sql_query: {e}")
