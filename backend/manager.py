@@ -108,6 +108,33 @@ class Manager:
         try:
             # 1) Send the user's input to the Chat Agent via the llm_chat_fn.
             chat_response = llm_chat_fn(user_input, user_id)
+
+            if is_download_request(llm_chat_fn, user_input, user_id):
+                # SQL üret -> file_path'i çek -> varsa döndür
+                normalized = generate_sql_query(user_input)
+                if isinstance(normalized, dict) and normalized.get("status") == "error":
+                    return {"status": "error", "message": "Could not generate SQL query for download request."}
+
+                corrected_sql = correct_column_names(normalized)
+                sql_result = execute_sql_query(corrected_sql)
+
+                if (
+                    isinstance(sql_result, list)
+                    and all("file_path" in row and isinstance(row["file_path"], str) for row in sql_result)
+                ):
+                    links = "\n".join([f"- {row['file_path']}" for row in sql_result])
+                    return {
+                        "status": "success",
+                        "type": "Chat",
+                        "data": f"📥 Here {'is' if len(sql_result)==1 else 'are'} the download link{'s' if len(sql_result)>1 else ''}:\n{links}"
+                    }
+                else:
+                    return {
+                        "status": "success",
+                        "type": "Chat",
+                        "data": "🚫 I couldn’t find any downloadable version of this book in the database."
+                    }
+
             
             # If an error occurred in the Chat Agent, return the error immediately.
             if chat_response.get("status") == "error":
@@ -185,6 +212,31 @@ class Manager:
                         }
 
                 # 6) Send the SQL result back to the Chat Agent to be formatted into a user-friendly response.
+                # 6.0) Eğer birden fazla file_path varsa, hepsini listele
+                if (
+                    isinstance(sql_result, list)
+                    and len(sql_result) > 1
+                    and all("file_path" in row and isinstance(row["file_path"], str) for row in sql_result)
+                ):
+                    links = "\n".join([f"- {row['file_path']}" for row in sql_result])
+                    return {
+                        "status": "success",
+                        "type": "Chat",
+                        "data": f"📥 Here are the download links:\n{links}"
+                    }
+                # 6.1) Eğer sadece file_path döndüyse, formatlamaya gerek yok
+                if (
+                    isinstance(sql_result, list)
+                    and len(sql_result) == 1
+                    and "file_path" in sql_result[0]
+                    and len(sql_result[0]) == 1
+                ):
+                    return {
+                        "status": "success",
+                        "type": "Chat",
+                        "data": f"📥 Here is the download link: {sql_result[0]['file_path']}"
+                    }
+
                 # Optional: Translate Turkish category to English before sending to LLM
                 if isinstance(sql_result, list):
                     for row in sql_result:
@@ -215,3 +267,17 @@ class Manager:
                 "status": "error",
                 "message": "Manager encountered an unexpected error. Please try again later."
             }
+        
+def is_download_request(llm_chat_fn, user_input, user_id="default_user"):
+    try:
+        intent_prompt = (
+            "Determine if the user is asking to access or download a book file. "
+            "If so, return only 'yes'. If not, return 'no'.\n"
+            f"User: {user_input}"
+        )
+        response = llm_chat_fn(intent_prompt, user_id)
+        answer = response.get("data", "").strip().lower()
+        return "yes" in answer
+    except Exception as e:
+        print(f"Intent check failed: {e}")
+        return False  # fail safe
